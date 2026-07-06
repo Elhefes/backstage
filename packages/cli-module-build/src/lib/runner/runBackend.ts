@@ -24,6 +24,7 @@ import { isAbsolute as isAbsolutePath } from 'node:path';
 import { targetPaths } from '@backstage/cli-common';
 
 import spawn from 'cross-spawn';
+import { startEmbeddedDb } from './startEmbeddedDb';
 
 const loaderArgs = [
   '--enable-source-maps',
@@ -45,6 +46,8 @@ export type RunBackendOptions = {
   require?: string | string[];
   /** An external linked workspace to override module resolution towards */
   linkedWorkspace?: string;
+  /** Config file paths from --config flags */
+  configPaths?: string[];
 };
 
 export async function runBackend(options: RunBackendOptions) {
@@ -56,6 +59,18 @@ export async function runBackend(options: RunBackendOptions) {
   // Set up the parent IPC server and bind the available services
   const server = new IpcServer();
   ServerDataStore.bind(server);
+
+  const extraEnv: Record<string, string> = {};
+
+  const embeddedDb = await startEmbeddedDb({
+    configPaths: options.configPaths,
+    targetDir: options.targetDir,
+  });
+  if (embeddedDb) {
+    extraEnv.APP_CONFIG_backend_database = JSON.stringify(
+      embeddedDb.configOverride,
+    );
+  }
 
   let exiting = false;
   let firstStart = true;
@@ -134,6 +149,7 @@ export async function runBackend(options: RunBackendOptions) {
         cwd: options.targetDir,
         env: {
           ...process.env,
+          ...extraEnv,
           BACKSTAGE_CLI_LINKED_WORKSPACE: options.linkedWorkspace,
           BACKSTAGE_CLI_CHANNEL: '1',
           ESBK_TSCONFIG_PATH: targetPaths.resolveRoot('tsconfig.json'),
@@ -186,6 +202,7 @@ export async function runBackend(options: RunBackendOptions) {
         });
       }
 
+      await embeddedDb?.close();
       resolveExitPromise();
     }
 

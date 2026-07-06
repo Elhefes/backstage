@@ -35,6 +35,7 @@ export const TableWrapperDefinition = defineComponent<{
   classNames: {
     root: 'bui-TableWrapper',
     resizableContainer: 'bui-TableResizableContainer',
+    scrollContainer: 'bui-TableScrollContainer',
   },
   propDefs: {
     className: {},
@@ -52,6 +53,7 @@ export const TableDefinition = defineComponent<TableRootOwnProps>()({
   },
   propDefs: {
     stale: { dataAttribute: true },
+    isPending: { dataAttribute: true },
     loading: { dataAttribute: true },
   },
 });
@@ -90,7 +92,6 @@ export const TableBodyDefinition = defineComponent<TableBodyOwnProps>()({
  */
 export const RowDefinition = defineComponent<RowOwnProps>()({
   styles,
-  resolveHref: true,
   analytics: true,
   bg: 'consumer',
   classNames: {
@@ -144,7 +145,6 @@ export const CellDefinition = defineComponent<CellOwnProps>()({
  */
 export const CellTextDefinition = defineComponent<CellTextOwnProps>()({
   styles,
-  resolveHref: true,
   classNames: {
     root: 'bui-TableCell',
     cellContentWrapper: 'bui-TableCellContentWrapper',
@@ -167,7 +167,6 @@ export const CellTextDefinition = defineComponent<CellTextOwnProps>()({
  */
 export const CellProfileDefinition = defineComponent<CellProfileOwnProps>()({
   styles,
-  resolveHref: true,
   classNames: {
     root: 'bui-TableCell',
     cellContentWrapper: 'bui-TableCellContentWrapper',

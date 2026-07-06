@@ -6,6 +6,7 @@
 import { ApiRef } from '@backstage/frontend-plugin-api';
 import { ApiRef as ApiRef_2 } from '@backstage/core-plugin-api';
 import { AutocompleteProps } from '@material-ui/lab/Autocomplete';
+import { AutocompleteRenderOptionState } from '@material-ui/lab/Autocomplete';
 import { CATALOG_FILTER_EXISTS } from '@backstage/catalog-client';
 import { CatalogApi } from '@backstage/catalog-client';
 import { ComponentEntity } from '@backstage/catalog-model';
@@ -196,6 +197,7 @@ export const catalogReactTranslationRef: TranslationRef<
     readonly 'inspectEntityDialog.colocatedPage.alertNoEntity': 'There were no other entities on this location.';
     readonly 'inspectEntityDialog.colocatedPage.locationHeader': 'At the same location';
     readonly 'inspectEntityDialog.colocatedPage.originHeader': 'At the same origin';
+    readonly 'inspectEntityDialog.colocatedPage.entityListAriaLabel': 'Colocated entities';
     readonly 'inspectEntityDialog.jsonPage.title': 'Entity as JSON';
     readonly 'inspectEntityDialog.jsonPage.description': 'This is the raw entity data as received from the catalog, on JSON form.';
     readonly 'inspectEntityDialog.overviewPage.title': 'Overview';
@@ -203,9 +205,12 @@ export const catalogReactTranslationRef: TranslationRef<
     readonly 'inspectEntityDialog.overviewPage.labels': 'Labels';
     readonly 'inspectEntityDialog.overviewPage.status.title': 'Status';
     readonly 'inspectEntityDialog.overviewPage.identity.title': 'Identity';
-    readonly 'inspectEntityDialog.overviewPage.annotations': 'Annotations';
     readonly 'inspectEntityDialog.overviewPage.tags': 'Tags';
+    readonly 'inspectEntityDialog.overviewPage.annotations': 'Annotations';
     readonly 'inspectEntityDialog.overviewPage.relation.title': 'Relations';
+    readonly 'inspectEntityDialog.overviewPage.copyAriaLabel': 'Copy {{label}}';
+    readonly 'inspectEntityDialog.overviewPage.copiedStatus': 'Copied';
+    readonly 'inspectEntityDialog.overviewPage.helpLinkAriaLabel': 'Learn more';
     readonly 'inspectEntityDialog.yamlPage.title': 'Entity as YAML';
     readonly 'inspectEntityDialog.yamlPage.description': 'This is the raw entity data as received from the catalog, on YAML form.';
     readonly 'inspectEntityDialog.tabNames.json': 'Raw JSON';
@@ -240,8 +245,8 @@ export const catalogReactTranslationRef: TranslationRef<
     readonly 'entityTableColumnTitle.description': 'Description';
     readonly 'entityTableColumnTitle.system': 'System';
     readonly 'entityTableColumnTitle.namespace': 'Namespace';
-    readonly 'entityTableColumnTitle.domain': 'Domain';
     readonly 'entityTableColumnTitle.tags': 'Tags';
+    readonly 'entityTableColumnTitle.domain': 'Domain';
     readonly 'entityTableColumnTitle.owner': 'Owner';
     readonly 'entityTableColumnTitle.lifecycle': 'Lifecycle';
     readonly 'entityTableColumnTitle.targets': 'Targets';
@@ -266,6 +271,7 @@ export type CatalogReactUserListPickerClassKey =
 export const columnFactories: Readonly<{
   createEntityRefColumn<T extends Entity>(options: {
     defaultKind?: string;
+    entityPresentationApi?: EntityPresentationApi;
   }): TableColumn<T>;
   createEntityRelationColumn<T extends Entity>(options: {
     title: string | JSX.Element;
@@ -274,6 +280,7 @@ export const columnFactories: Readonly<{
     filter?: {
       kind: string;
     };
+    entityPresentationApi?: EntityPresentationApi;
   }): TableColumn<T>;
   createOwnerColumn<T extends Entity>(): TableColumn<T>;
   createDomainColumn<T extends Entity>(): TableColumn<T>;
@@ -340,6 +347,11 @@ export type EntityAutocompletePickerProps<
   initialSelectedOptions?: string[];
   filtersForAvailableValues?: Array<keyof T>;
   hidden?: boolean;
+  getOptionLabel?: (option: string) => string;
+  renderOption?: (
+    option: string,
+    state: AutocompleteRenderOptionState,
+  ) => ReactNode;
 };
 
 // @public
@@ -460,11 +472,13 @@ export type EntityListContextProps<
     prev?: () => void;
   };
   totalItems?: number;
+  totalItemsLoading: boolean;
   limit: number;
   offset?: number;
   setLimit: (limit: number) => void;
   setOffset?: (offset: number) => void;
   paginationMode: PaginationMode;
+  refresh?: () => void;
 };
 
 // @public (undocumented)
@@ -591,6 +605,16 @@ export interface EntityPresentationApi {
 // @public
 export const entityPresentationApiRef: ApiRef_2<EntityPresentationApi>;
 
+// @public
+export function entityPresentationSnapshot(
+  entityOrRef: Entity | CompoundEntityRef | string,
+  context?: {
+    defaultKind?: string;
+    defaultNamespace?: string;
+  },
+  entityPresentationApi?: EntityPresentationApi,
+): EntityRefPresentationSnapshot;
+
 // @public (undocumented)
 export const EntityProcessingStatusPicker: () => JSX_2.Element;
 
@@ -687,6 +711,7 @@ export const EntityTable: {
   columns: Readonly<{
     createEntityRefColumn<T extends Entity>(options: {
       defaultKind?: string;
+      entityPresentationApi?: EntityPresentationApi;
     }): TableColumn<T>;
     createEntityRelationColumn<T extends Entity>(options: {
       title: string | JSX.Element;
@@ -695,6 +720,7 @@ export const EntityTable: {
       filter?: {
         kind: string;
       };
+      entityPresentationApi?: EntityPresentationApi;
     }): TableColumn<T>;
     createOwnerColumn<T extends Entity>(): TableColumn<T>;
     createDomainColumn<T extends Entity>(): TableColumn<T>;
@@ -834,7 +860,7 @@ export function getEntitySourceLocation(
   scmIntegrationsApi: typeof scmIntegrationsApiRef.T,
 ): EntitySourceLocation | undefined;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 export function humanizeEntityRef(
   entityRef: Entity | CompoundEntityRef,
   opts?: {

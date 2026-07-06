@@ -8,10 +8,12 @@ import { ColumnConfig } from '@backstage/ui';
 import { ComponentType } from 'react';
 import { ConfigurableExtensionDataRef } from '@backstage/frontend-plugin-api';
 import { Entity } from '@backstage/catalog-model';
+import { EntityPresentationApi } from '@backstage/plugin-catalog-react';
 import { ExtensionBlueprint } from '@backstage/frontend-plugin-api';
 import { ExtensionDataRef } from '@backstage/frontend-plugin-api';
 import { ExtensionDefinition } from '@backstage/frontend-plugin-api';
 import { FilterPredicate } from '@backstage/filter-predicates';
+import { IconElement } from '@backstage/frontend-plugin-api';
 import { IconLinkVerticalProps } from '@backstage/core-components';
 import { JSX as JSX_2 } from 'react';
 import { JSX as JSX_3 } from 'react/jsx-runtime';
@@ -73,6 +75,7 @@ export const catalogReactTranslationRef: TranslationRef<
     readonly 'inspectEntityDialog.colocatedPage.alertNoEntity': 'There were no other entities on this location.';
     readonly 'inspectEntityDialog.colocatedPage.locationHeader': 'At the same location';
     readonly 'inspectEntityDialog.colocatedPage.originHeader': 'At the same origin';
+    readonly 'inspectEntityDialog.colocatedPage.entityListAriaLabel': 'Colocated entities';
     readonly 'inspectEntityDialog.jsonPage.title': 'Entity as JSON';
     readonly 'inspectEntityDialog.jsonPage.description': 'This is the raw entity data as received from the catalog, on JSON form.';
     readonly 'inspectEntityDialog.overviewPage.title': 'Overview';
@@ -80,9 +83,12 @@ export const catalogReactTranslationRef: TranslationRef<
     readonly 'inspectEntityDialog.overviewPage.labels': 'Labels';
     readonly 'inspectEntityDialog.overviewPage.status.title': 'Status';
     readonly 'inspectEntityDialog.overviewPage.identity.title': 'Identity';
-    readonly 'inspectEntityDialog.overviewPage.annotations': 'Annotations';
     readonly 'inspectEntityDialog.overviewPage.tags': 'Tags';
+    readonly 'inspectEntityDialog.overviewPage.annotations': 'Annotations';
     readonly 'inspectEntityDialog.overviewPage.relation.title': 'Relations';
+    readonly 'inspectEntityDialog.overviewPage.copyAriaLabel': 'Copy {{label}}';
+    readonly 'inspectEntityDialog.overviewPage.copiedStatus': 'Copied';
+    readonly 'inspectEntityDialog.overviewPage.helpLinkAriaLabel': 'Learn more';
     readonly 'inspectEntityDialog.yamlPage.title': 'Entity as YAML';
     readonly 'inspectEntityDialog.yamlPage.description': 'This is the raw entity data as received from the catalog, on YAML form.';
     readonly 'inspectEntityDialog.tabNames.json': 'Raw JSON';
@@ -117,8 +123,8 @@ export const catalogReactTranslationRef: TranslationRef<
     readonly 'entityTableColumnTitle.description': 'Description';
     readonly 'entityTableColumnTitle.system': 'System';
     readonly 'entityTableColumnTitle.namespace': 'Namespace';
-    readonly 'entityTableColumnTitle.domain': 'Domain';
     readonly 'entityTableColumnTitle.tags': 'Tags';
+    readonly 'entityTableColumnTitle.domain': 'Domain';
     readonly 'entityTableColumnTitle.owner': 'Owner';
     readonly 'entityTableColumnTitle.lifecycle': 'Lifecycle';
     readonly 'entityTableColumnTitle.targets': 'Targets';
@@ -334,9 +340,9 @@ export const EntityContentBlueprint: ExtensionBlueprint<{
     icon: string | undefined;
   };
   configInput: {
-    filter?: FilterPredicate | undefined;
-    title?: string | undefined;
     path?: string | undefined;
+    title?: string | undefined;
+    filter?: FilterPredicate | undefined;
     group?: string | false | undefined;
     icon?: string | undefined;
   };
@@ -413,8 +419,8 @@ export const EntityContentLayoutBlueprint: ExtensionBlueprint<{
     filter: FilterPredicate | undefined;
   };
   configInput: {
-    filter?: FilterPredicate | undefined;
     type?: string | undefined;
+    filter?: FilterPredicate | undefined;
   };
   dataRefs: {
     filterFunction: ConfigurableExtensionDataRef<
@@ -449,13 +455,17 @@ export const EntityContextMenuItemBlueprint: ExtensionBlueprint<{
   kind: 'entity-context-menu-item';
   params: EntityContextMenuItemParams;
   output:
-    | ExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
     | ExtensionDataRef<
         (entity: Entity) => boolean,
         'catalog.entity-filter-function',
         {
           optional: true;
         }
+      >
+    | ExtensionDataRef<
+        EntityContextMenuItemData,
+        'catalog.entity-context-menu-item-data',
+        {}
       >;
   inputs: {};
   config: {
@@ -465,6 +475,11 @@ export const EntityContextMenuItemBlueprint: ExtensionBlueprint<{
     filter?: FilterPredicate | undefined;
   };
   dataRefs: {
+    data: ConfigurableExtensionDataRef<
+      EntityContextMenuItemData,
+      'catalog.entity-context-menu-item-data',
+      {}
+    >;
     filterFunction: ConfigurableExtensionDataRef<
       (entity: Entity) => boolean,
       'catalog.entity-filter-function',
@@ -474,9 +489,15 @@ export const EntityContextMenuItemBlueprint: ExtensionBlueprint<{
 }>;
 
 // @alpha (undocumented)
+export type EntityContextMenuItemData = {
+  icon: IconElement;
+  useProps: UseProps;
+};
+
+// @alpha (undocumented)
 export type EntityContextMenuItemParams = {
   useProps: UseProps;
-  icon: JSX_2.Element;
+  icon: IconElement;
   filter?: FilterPredicate | ((entity: Entity) => boolean);
 };
 
@@ -488,6 +509,7 @@ export const entityDataTableColumns: Readonly<{
   createEntityRefColumn(options: {
     defaultKind?: string;
     isRowHeader?: boolean;
+    entityPresentationApi?: EntityPresentationApi;
   }): EntityColumnConfig;
   createEntityRelationColumn(options: {
     id: string;
@@ -497,6 +519,7 @@ export const entityDataTableColumns: Readonly<{
     filter?: {
       kind: string;
     };
+    entityPresentationApi?: EntityPresentationApi;
   }): EntityColumnConfig;
   createOwnerColumn(): EntityColumnConfig;
   createSystemColumn(): EntityColumnConfig;
@@ -520,7 +543,7 @@ export interface EntityDataTableProps {
   loading?: boolean;
 }
 
-// @alpha (undocumented)
+// @alpha @deprecated (undocumented)
 export const EntityHeaderBlueprint: ExtensionBlueprint<{
   kind: 'entity-header';
   params: {
@@ -571,6 +594,70 @@ export const EntityHeaderBlueprint: ExtensionBlueprint<{
 }>;
 
 // @alpha (undocumented)
+export const EntityHeaderLayoutBlueprint: ExtensionBlueprint<{
+  kind: 'entity-header-layout';
+  params: {
+    filter?: FilterPredicate | ((entity: Entity) => boolean);
+    loader: () => Promise<(props: EntityHeaderLayoutProps) => JSX_2.Element>;
+  };
+  output:
+    | ExtensionDataRef<
+        (entity: Entity) => boolean,
+        'catalog.entity-filter-function',
+        {
+          optional: true;
+        }
+      >
+    | ExtensionDataRef<
+        (props: EntityHeaderLayoutProps) => JSX_2.Element,
+        'catalog.entity-header-layout.component',
+        {}
+      >;
+  inputs: {};
+  config: {
+    filter: FilterPredicate | undefined;
+  };
+  configInput: {
+    filter?: FilterPredicate | undefined;
+  };
+  dataRefs: {
+    filterFunction: ConfigurableExtensionDataRef<
+      (entity: Entity) => boolean,
+      'catalog.entity-filter-function',
+      {}
+    >;
+    component: ConfigurableExtensionDataRef<
+      (props: EntityHeaderLayoutProps) => JSX_2.Element,
+      'catalog.entity-header-layout.component',
+      {}
+    >;
+  };
+}>;
+
+// @alpha (undocumented)
+export interface EntityHeaderLayoutProps {
+  // (undocumented)
+  activeTabId?: string;
+  // (undocumented)
+  tabs: Array<
+    | {
+        id: string;
+        label: string;
+        href: string;
+      }
+    | {
+        id: string;
+        label: string;
+        items: Array<{
+          id: string;
+          label: string;
+          href: string;
+        }>;
+      }
+  >;
+}
+
+// @alpha (undocumented)
 export const EntityIconLinkBlueprint: ExtensionBlueprint<{
   kind: 'entity-icon-link';
   params: {
@@ -604,9 +691,9 @@ export const EntityIconLinkBlueprint: ExtensionBlueprint<{
     filter: FilterPredicate | undefined;
   };
   configInput: {
-    filter?: FilterPredicate | undefined;
     label?: string | undefined;
     title?: string | undefined;
+    filter?: FilterPredicate | undefined;
   };
   dataRefs: {
     useProps: ConfigurableExtensionDataRef<
@@ -705,6 +792,7 @@ export type UseProps = () =>
   | {
       title: ReactNode;
       href: string;
+      onClick?: () => void | Promise<void>;
       disabled?: boolean;
     }
   | {

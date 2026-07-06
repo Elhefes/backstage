@@ -24,6 +24,7 @@ import type {
   EvaluatePermissionRequest,
   EvaluatePermissionResponse,
 } from '@backstage/plugin-permission-common';
+import { ForwardedError } from '@backstage/errors';
 
 export type ExtensionPredicateContext = {
   featureFlags: string[];
@@ -41,6 +42,28 @@ type MinimalPermissionApi = {
     request: EvaluatePermissionRequest,
   ): Promise<EvaluatePermissionResponse>;
 };
+
+function parsePermissionName(permissionName: string) {
+  const parts = permissionName.split('#');
+  const [name, action, ...rest] = parts;
+
+  if (rest.length > 0 || !name || (parts.length === 2 && !action)) {
+    throw new Error(
+      `Invalid permission name: ${permissionName}. Permission names must be in the format "permissionName" or "permissionName#action" (both parts must be non-empty).`,
+    );
+  }
+
+  if (action === undefined) {
+    return { name };
+  }
+
+  return {
+    name,
+    attributes: {
+      action,
+    },
+  };
+}
 
 export const localPermissionApiRef = createApiRef<MinimalPermissionApi>({
   id: 'plugin.permission.api',
@@ -84,17 +107,34 @@ export function createPredicateContextLoader(options: {
     let allowedPermissions: string[] = [];
     const permissionApi = options.apis.get(localPermissionApiRef);
     if (permissionApi) {
-      const permissionNames = options.predicateReferences.permissions;
-      const responses = await Promise.all(
-        permissionNames.map(name =>
-          permissionApi.authorize({
-            permission: { name, type: 'basic', attributes: {} },
-          }),
-        ),
-      );
-      allowedPermissions = permissionNames.filter(
-        (_, i) => responses[i].result === 'ALLOW',
-      );
+      try {
+        const permissionNames = options.predicateReferences.permissions;
+        const hydratedPermissions = permissionNames.map(name => {
+          const { name: permissionName, attributes } =
+            parsePermissionName(name);
+          const permission = {
+            name: permissionName,
+            type: 'basic',
+            attributes: attributes || {},
+          } as const;
+          return permission;
+        });
+        const responses = await Promise.all(
+          hydratedPermissions.map(permission =>
+            permissionApi.authorize({
+              permission,
+            }),
+          ),
+        );
+        allowedPermissions = permissionNames.filter(
+          (_, i) => responses[i].result === 'ALLOW',
+        );
+      } catch (error) {
+        throw new ForwardedError(
+          'Failed to authorize extension permissions',
+          error,
+        );
+      }
     }
 
     return {

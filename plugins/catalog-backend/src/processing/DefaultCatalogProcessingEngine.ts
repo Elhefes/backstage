@@ -19,7 +19,7 @@ import {
   Entity,
   stringifyEntityRef,
 } from '@backstage/catalog-model';
-import { assertError, serializeError, stringifyError } from '@backstage/errors';
+import { serializeError, stringifyError, toError } from '@backstage/errors';
 import { Hash } from 'node:crypto';
 import stableStringify from 'fast-json-stable-stringify';
 import { Knex } from 'knex';
@@ -27,7 +27,7 @@ import { trace } from '@opentelemetry/api';
 import { ProcessingDatabase, RefreshStateItem } from '../database/types';
 import { createCounterMetric, createSummaryMetric } from '../util/metrics';
 import { CatalogProcessingOrchestrator, EntityProcessingResult } from './types';
-import { Stitcher, stitchingStrategyFromConfig } from '../stitching/types';
+import { markForStitching } from '../database/operations/stitcher/markForStitching';
 import { startTaskPipeline } from './TaskPipeline';
 import { Config } from '@backstage/config';
 import {
@@ -65,7 +65,6 @@ export class DefaultCatalogProcessingEngine {
   private readonly knex: Knex;
   private readonly processingDatabase: ProcessingDatabase;
   private readonly orchestrator: CatalogProcessingOrchestrator;
-  private readonly stitcher: Stitcher;
   private readonly createHash: () => Hash;
   private readonly pollingIntervalMs: number;
   private readonly orphanCleanupIntervalMs: number;
@@ -85,7 +84,6 @@ export class DefaultCatalogProcessingEngine {
     knex: Knex;
     processingDatabase: ProcessingDatabase;
     orchestrator: CatalogProcessingOrchestrator;
-    stitcher: Stitcher;
     createHash: () => Hash;
     pollingIntervalMs?: number;
     orphanCleanupIntervalMs?: number;
@@ -103,7 +101,6 @@ export class DefaultCatalogProcessingEngine {
     this.knex = options.knex;
     this.processingDatabase = options.processingDatabase;
     this.orchestrator = options.orchestrator;
-    this.stitcher = options.stitcher;
     this.createHash = options.createHash;
     this.pollingIntervalMs = options.pollingIntervalMs ?? 1_000;
     this.orphanCleanupIntervalMs = options.orphanCleanupIntervalMs ?? 30_000;
@@ -256,7 +253,7 @@ export class DefaultCatalogProcessingEngine {
             // non-catastrophic things such as due to validation errors, as well as if
             // something fatal happens inside the processing for other reasons. In any
             // case, this means we can't trust that anything in the output is okay. So
-            // just store the errors and trigger a stich so that they become visible to
+            // just store the errors and trigger a stitch so that they become visible to
             // the outside.
             if (!result.ok) {
               // notify the error listener if the entity can not be processed.
@@ -283,7 +280,8 @@ export class DefaultCatalogProcessingEngine {
                 });
               });
 
-              await this.stitcher.stitch({
+              await markForStitching({
+                knex: this.knex,
                 entityRefs: [stringifyEntityRef(unprocessedEntity)],
               });
 
@@ -338,14 +336,14 @@ export class DefaultCatalogProcessingEngine {
               }
             });
 
-            await this.stitcher.stitch({
+            await markForStitching({
+              knex: this.knex,
               entityRefs: setOfThingsToStitch,
             });
 
             track.markSuccessfulWithChanges();
           } catch (error) {
-            assertError(error);
-            track.markFailed(error);
+            track.markFailed(toError(error));
           }
         });
       },
@@ -359,13 +357,10 @@ export class DefaultCatalogProcessingEngine {
       return () => {};
     }
 
-    const stitchingStrategy = stitchingStrategyFromConfig(this.config);
-
     const runOnce = async () => {
       try {
         const n = await deleteOrphanedEntities({
           knex: this.knex,
-          strategy: stitchingStrategy,
         });
         if (n > 0) {
           this.logger.info(`Deleted ${n} orphaned entities`);

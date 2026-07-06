@@ -49,6 +49,12 @@ jest.mock('ctrlc-windows', () => ({
   ctrlc: jest.fn(),
 }));
 
+const mockStartEmbeddedDb = jest.fn();
+
+jest.mock('./startEmbeddedDb', () => ({
+  startEmbeddedDb: (...args: any[]) => mockStartEmbeddedDb(...args),
+}));
+
 describe('runBackend', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let originalPlatform: string;
@@ -68,6 +74,9 @@ describe('runBackend', () => {
 
     // Mock process.once to prevent actual signal handling
     jest.spyOn(process, 'once').mockReturnValue(process);
+
+    mockStartEmbeddedDb.mockReset();
+    mockStartEmbeddedDb.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -82,97 +91,144 @@ describe('runBackend', () => {
   });
 
   describe('--no-node-snapshot argument handling', () => {
-    it('should pass --no-node-snapshot when NODE_OPTIONS is not set', () => {
+    it('should pass --no-node-snapshot when NODE_OPTIONS is not set', async () => {
       delete process.env.NODE_OPTIONS;
 
-      runBackend({
-        entry: 'src/index',
-      });
+      runBackend({ entry: 'src/index' });
 
-      // Fast-forward past the debounce delay (100ms)
-      jest.advanceTimersByTime(100);
+      await jest.advanceTimersByTimeAsync(100);
 
       expect(mockSpawn).toHaveBeenCalled();
       const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
       expect(spawnArgs).toContain('--no-node-snapshot');
     });
 
-    it('should pass --no-node-snapshot when NODE_OPTIONS exists without --node-snapshot', () => {
+    it('should pass --no-node-snapshot when NODE_OPTIONS exists without --node-snapshot', async () => {
       process.env.NODE_OPTIONS = '--max-old-space-size=4096';
 
-      runBackend({
-        entry: 'src/index',
-      });
+      runBackend({ entry: 'src/index' });
 
-      // Fast-forward past the debounce delay (100ms)
-      jest.advanceTimersByTime(100);
+      await jest.advanceTimersByTimeAsync(100);
 
       expect(mockSpawn).toHaveBeenCalled();
       const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
       expect(spawnArgs).toContain('--no-node-snapshot');
     });
 
-    it('should not pass --no-node-snapshot when --node-snapshot already exists in NODE_OPTIONS', () => {
+    it('should not pass --no-node-snapshot when --node-snapshot already exists in NODE_OPTIONS', async () => {
       process.env.NODE_OPTIONS = '--node-snapshot --max-old-space-size=4096';
 
-      runBackend({
-        entry: 'src/index',
-      });
+      runBackend({ entry: 'src/index' });
 
-      // Fast-forward past the debounce delay (100ms)
-      jest.advanceTimersByTime(100);
+      await jest.advanceTimersByTimeAsync(100);
 
       expect(mockSpawn).toHaveBeenCalled();
       const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
       expect(spawnArgs).not.toContain('--no-node-snapshot');
     });
 
-    it('should not pass --no-node-snapshot when --node-snapshot exists in the middle of NODE_OPTIONS', () => {
+    it('should not pass --no-node-snapshot when --node-snapshot exists in the middle of NODE_OPTIONS', async () => {
       process.env.NODE_OPTIONS =
         '--max-old-space-size=4096 --node-snapshot --inspect';
 
-      runBackend({
-        entry: 'src/index',
-      });
+      runBackend({ entry: 'src/index' });
 
-      // Fast-forward past the debounce delay (100ms)
-      jest.advanceTimersByTime(100);
+      await jest.advanceTimersByTimeAsync(100);
 
       expect(mockSpawn).toHaveBeenCalled();
       const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
       expect(spawnArgs).not.toContain('--no-node-snapshot');
     });
 
-    it('should pass --no-node-snapshot even with trailing spaces in NODE_OPTIONS', () => {
+    it('should pass --no-node-snapshot even with trailing spaces in NODE_OPTIONS', async () => {
       process.env.NODE_OPTIONS = '--max-old-space-size=4096 ';
 
-      runBackend({
-        entry: 'src/index',
-      });
+      runBackend({ entry: 'src/index' });
 
-      // Fast-forward past the debounce delay (100ms)
-      jest.advanceTimersByTime(100);
+      await jest.advanceTimersByTimeAsync(100);
 
       expect(mockSpawn).toHaveBeenCalled();
       const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
       expect(spawnArgs).toContain('--no-node-snapshot');
     });
 
-    it('should pass --no-node-snapshot alongside other option args like --inspect', () => {
+    it('should pass --no-node-snapshot alongside other option args like --inspect', async () => {
       delete process.env.NODE_OPTIONS;
 
-      runBackend({
-        entry: 'src/index',
-        inspectEnabled: true,
-      });
+      runBackend({ entry: 'src/index', inspectEnabled: true });
 
-      // Fast-forward past the debounce delay (100ms)
-      jest.advanceTimersByTime(100);
+      await jest.advanceTimersByTimeAsync(100);
 
       expect(mockSpawn).toHaveBeenCalled();
       const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
       expect(spawnArgs).toContain('--no-node-snapshot');
       expect(spawnArgs).toContain('--inspect');
+    });
+  });
+
+  describe('embedded-postgres support', () => {
+    it('should inject config override from startEmbeddedDb when it returns a result', async () => {
+      mockStartEmbeddedDb.mockResolvedValue({
+        configOverride: {
+          client: 'pg',
+          connection: {
+            host: 'localhost',
+            user: 'postgres',
+            password: 'password',
+            port: 5555,
+          },
+        },
+        close: jest.fn(),
+      });
+
+      runBackend({ entry: 'src/index' });
+      await jest.advanceTimersByTimeAsync(100);
+
+      expect(mockStartEmbeddedDb).toHaveBeenCalledWith({
+        configPaths: undefined,
+        targetDir: undefined,
+      });
+      const spawnEnv = mockSpawn.mock.calls[0][2]?.env as Record<
+        string,
+        string
+      >;
+      const injected = JSON.parse(spawnEnv.APP_CONFIG_backend_database);
+      expect(injected).toEqual({
+        client: 'pg',
+        connection: {
+          host: 'localhost',
+          user: 'postgres',
+          password: 'password',
+          port: 5555,
+        },
+      });
+    });
+
+    it('should forward configPaths and targetDir to startEmbeddedDb', async () => {
+      runBackend({
+        entry: 'src/index',
+        targetDir: '/root/packages/backend',
+        configPaths: ['../../config/local.yaml'],
+      });
+      await jest.advanceTimersByTimeAsync(100);
+
+      expect(mockStartEmbeddedDb).toHaveBeenCalledWith({
+        configPaths: ['../../config/local.yaml'],
+        targetDir: '/root/packages/backend',
+      });
+    });
+
+    it('should not inject config override when startEmbeddedDb returns undefined', async () => {
+      mockStartEmbeddedDb.mockResolvedValue(undefined);
+
+      runBackend({ entry: 'src/index' });
+      await jest.advanceTimersByTimeAsync(100);
+
+      const spawnEnv = mockSpawn.mock.calls[0][2]?.env as Record<
+        string,
+        string
+      >;
+      expect(spawnEnv.APP_CONFIG_backend_database).toBeUndefined();
     });
   });
 });

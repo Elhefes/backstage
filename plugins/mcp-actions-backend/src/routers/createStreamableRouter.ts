@@ -20,8 +20,11 @@ import { McpService } from '../services/McpService';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { HttpAuthService, LoggerService } from '@backstage/backend-plugin-api';
-import { isError } from '@backstage/errors';
-import { MetricsService } from '@backstage/backend-plugin-api/alpha';
+import { toError } from '@backstage/errors';
+import {
+  MetricsService,
+  TracingService,
+} from '@backstage/backend-plugin-api/alpha';
 import { bucketBoundaries, McpServerSessionAttributes } from '../metrics';
 import { McpServerConfig } from '../config';
 
@@ -30,12 +33,14 @@ export const createStreamableRouter = ({
   httpAuth,
   logger,
   metrics,
+  tracing,
   serverConfig,
 }: {
   mcpService: McpService;
   logger: LoggerService;
   httpAuth: HttpAuthService;
   metrics: MetricsService;
+  tracing: TracingService;
   serverConfig?: McpServerConfig;
 }): Router => {
   const router = PromiseRouter();
@@ -72,7 +77,13 @@ export const createStreamableRouter = ({
       });
 
       await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+      const ctx = tracing.propagation.extract(
+        tracing.context.active(),
+        req.headers,
+      );
+      await tracing.context.with(ctx, () =>
+        transport.handleRequest(req, res, req.body),
+      );
 
       res.on('close', () => {
         transport.close();
@@ -83,11 +94,10 @@ export const createStreamableRouter = ({
         sessionDuration.record(durationSeconds, baseAttributes);
       });
     } catch (error) {
-      const errorType = isError(error) ? error.name : 'Error';
+      const err = toError(error);
+      const errorType = err.name;
 
-      if (isError(error)) {
-        logger.error(error.message);
-      }
+      logger.error(err.message);
 
       if (!res.headersSent) {
         res.status(500).json({
